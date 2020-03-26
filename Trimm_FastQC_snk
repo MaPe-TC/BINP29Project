@@ -1,0 +1,51 @@
+import os
+from os.path import join
+import glob
+
+BASE_DIR = "/home/users/bio1916/bin/BINP29_project/"
+raw_data = BASE_DIR + "raw_data"
+
+samplelist, = glob_wildcards("raw_data/{sample}.fastq")
+
+rule all:
+    input:
+        expand("3.Trimmomatic/{sample}_trimmed.fastq", sample=samplelist),
+        expand("1.FastQC/{sample}_trimmed_fastqc.html", sample=samplelist),
+        "2.MultiQC/trimmed/multiqc_report.html"
+
+
+rule Trimmomatic:
+    input:
+        in_fastq="raw_data/{sample}.fastq"
+    output:
+        out_fastq="3.Trimmomatic/{sample}_trimmed.fastq"
+    conda:
+        "envs/trimmomatic.yaml"
+    message:
+        "--- running Trimmomatic ---"
+    shell:
+        "trimmomatic SE -trimlog 3.Trimmomatic/trim.log {input.in_fastq} {output.out_fastq} AVGQUAL:28 MINLEN:46 SLIDINGWINDOW:8:20"
+
+rule FastQC:
+    input:
+        in_fastq="3.Trimmomatic/{sample}_trimmed.fastq"
+    output:
+        out_fastqc="1.FastQC/{sample}_trimmed_fastqc.html"
+    message:
+        "--- running fastqc ---"
+    conda:
+        "envs/fastqc.yaml"
+    shell:
+        "fastqc --threads 6 {input.in_fastq} -q -f fastq -o 1.FastQC/"
+
+rule MultiQC:
+    input:
+        expand("1.FastQC/{sample}_trimmed_fastqc.html", sample=samplelist)
+    output:
+        "2.MultiQC/trimmed/multiqc_report.html"
+    conda:
+        "envs/fastqc.yaml"
+    shell:
+        """
+        multiqc -f {input} 1.FastQC/ -o 2.MultiQC/trimmed/
+        """

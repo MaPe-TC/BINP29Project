@@ -1,0 +1,174 @@
+import os
+from os.path import join
+import glob
+
+BASE_DIR = "/home/users/bio1916/bin/BINP29_project/"
+GENOME = BASE_DIR + "Genome/genome.fna"
+GFF = BASE_DIR + "Genome/genes.gff"
+HISAT2_INDEX_PREFIX = "4.Index/genome"
+FEATURETYPE = "CDS"
+
+configfile: BASE_DIR + "config.yaml"
+
+report: "rst/AnalysisReport.rst"
+
+samplelist, = glob_wildcards("3.Trimmomatic/{sample}_trimmed.fastq")
+
+rule all:
+    input:
+        expand(f"{HISAT2_INDEX_PREFIX}.{{ix}}.ht2", ix=range(1,9)),
+        expand("5.Mapping/{sample}.sam", sample=samplelist),
+        expand("6.Htseq_Count/{sample}.count", sample=samplelist),
+        expand("6.Htseq_Count/{sample}_count.txt", sample=samplelist),
+        "6.Htseq_Count/count_matrix.txt",
+        "7.DESeq2/normalizedCounts.rds",
+        "7.DESeq2/normalized_count.txt",
+        expand("8.Results/DifferentialExpression/{contrast}.diffexp.tsv", contrast=config["diffexp"]["contrasts"]),
+        expand("8.Results/DifferentialExpression/{contrast}.ma-plot.svg", contrast=config["diffexp"]["contrasts"]),
+        expand("8.Results/DifferentialExpression/{contrast}.ma-plot.pdf", contrast=config["diffexp"]["contrasts"]),
+        "8.Results/PCA/PCA.svg",
+        "8.Results/PCA/PCA.pdf",
+        "8.Results/Heatmaps/heatmap.mostexprgenes.svg",
+        "8.Results/Heatmaps/heatmap.mostexprgenes.pdf",
+        "8.Results/Heatmaps/replicates.svg",
+        "8.Results/Heatmaps/replicates.pdf",
+
+rule Hisat2build:
+    input:
+        in_fna = GENOME
+    output:
+        expand(f"{HISAT2_INDEX_PREFIX}.{{ix}}.ht2", ix=range(1,9))
+    conda:
+        "envs/Hisat2.yaml"
+    message:
+        "-----Indexing genome with Hisat2-build-----"
+    shell:
+        "hisat2-build {input.in_fna} {HISAT2_INDEX_PREFIX}"
+
+rule Hisat2_Align:
+    input:
+        hisat2_index=expand(f"{HISAT2_INDEX_PREFIX}.{{ix}}.ht2", ix=range(1, 9)),
+        in_fastq = "3.Trimmomatic/{sample}_trimmed.fastq"
+    output:
+        out_sam = "5.Mapping/{sample}.sam"
+    conda:
+        "envs/Hisat2.yaml"
+    message:
+        "-----Aligning with hisat2-----"
+    threads:
+        4
+    shell:
+        " hisat2 -p {threads} --dta -x {HISAT2_INDEX_PREFIX} "
+        " -U {input.in_fastq} -S {output.out_sam} "
+
+rule Htseq_Count:
+    input:
+        in_gff = GFF,
+        in_sam = "5.Mapping/{sample}.sam"
+    output:
+        out_count = "6.Htseq_Count/{sample}.count"
+    conda:
+        "envs/RNAanalysis.yaml"
+    message:
+        "-----Calculating the number of reads mapping to {FEATURETYPE}-----"
+    shell:
+        """
+        htseq-count -q \
+        --stranded no \
+        --type {FEATURETYPE} \
+        --idattr name \
+        --mode intersection-nonempty \
+        {input.in_sam} {GFF} | grep -v '^__' > {output.out_count}
+        """
+
+rule add_Header:
+    input:
+        in_count = "6.Htseq_Count/{sample}.count"
+    output:
+        out_count = "6.Htseq_Count/{sample}_count.txt"
+    message:
+        "-----Adding header to count files-----"
+    shell:
+        """
+        echo -e "geneID\t{wildcards.sample}" > {output.out_count}
+        cat {input.in_count} >> {output.out_count}
+        """
+
+rule Create_CountMatrix:
+    input:
+        expand("6.Htseq_Count/{sample}_count.txt", sample=samplelist)
+    output:
+        out_matrix = "6.Htseq_Count/count_matrix.txt"
+    message:
+        "-----Creating count matrix-----"
+    shell:
+        """
+        paste {input} | cut -f 1,2,4,6,8,10,12 | tr -d "#" > {output.out_matrix}
+        """
+
+rule DESeq2_init:
+    input:
+        counts_matrix="6.Htseq_Count/count_matrix.txt"
+    output:
+        "7.DESeq2/normalizedCounts.rds",
+        "7.DESeq2/normalized_count.txt"
+    params:
+        samples=config["samples"]
+    conda:
+        "envs/DESeq2.yaml"
+    message:
+        "-----Normalization DESeq2-----"
+    script:
+        "scripts/DESeq_init.R"
+
+def get_contrast(wildcards):
+    return config["diffexp"]["contrasts"][wildcards.contrast]
+
+rule DESeq2:
+    input:
+        "7.DESeq2/normalizedCounts.rds"
+    output:
+        diffexp_table = "8.Results/DifferentialExpression/{contrast}.diffexp.tsv",
+        signdiffexp_table = report("8.Results/DifferentialExpression/{contrast}.diffexp.0.05.tsv", caption="rst/diffexpSign0.05.rst", category="Results Table"),
+        ma_plot_svg = report("8.Results/DifferentialExpression/{contrast}.ma-plot.svg", caption="rst/ma_plot.rst", category="MA plot"),
+        ma_plot_pdf = "8.Results/DifferentialExpression/{contrast}.ma-plot.pdf"
+    params:
+        contrast=get_contrast
+    conda:
+        "envs/DESeq2.yaml"
+    message:
+        "-----Differential expression analysis-----"
+    script:
+        "scripts/DESeq2.R"
+
+rule PCAplot:
+    input:
+        "7.DESeq2/normalizedCounts.rds"
+    output:
+        PCA_svg = report("8.Results/PCA/PCA.svg", caption="rst/PCA.rst", category="PCA plot"),
+        PCA_pdf = "8.Results/PCA/PCA.pdf"
+    params:
+        pca_labels=config["pca"]["labels"]
+    conda:
+        "envs/DESeq2.yaml"
+    message:
+        "-----Generating PCA plot-----"
+    script:
+        "scripts/plot_PCA.R"
+
+rule DESeq2_heatmaps:
+    input:
+        "7.DESeq2/normalizedCounts.rds"
+    output:
+        heatmap_svg = report("8.Results/Heatmaps/heatmap.mostexprgenes.svg", caption="rst/mostexprgenesHeatmap.rst", category="Heatmaps"),
+        heatmap_pdf = "8.Results/Heatmaps/heatmap.mostexprgenes.pdf",
+        replicates_svg = report("8.Results/Heatmaps/replicates.svg", caption="rst/replicatesHeatmap.rst", category="Heatmaps"),
+        replicates_pdf = "8.Results/Heatmaps/replicates.pdf"
+    params:
+        samples=config["samples"]
+    conda:
+        "envs/DESeq2.yaml"
+    message:
+        "-----Generating heatmaps-----"
+    script:
+        "scripts/DESeq2.heatmaps.R"
