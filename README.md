@@ -26,6 +26,8 @@ Step 4a-c: Execute the different workflows
 
 a. Workflow_1: runs FastQC (v0.11.9) on single-end .fastq files and creates a MultiQC (v1.7) report.
 
+Note: FASTQ files should be stored in a folder named "raw_data".
+
 Run as: snakemake --use-conda -s FastQC_snk
 
 b. Workflow_2: runs Trimmomatic (v0.39), FastQC (v0.11.9) on the trimmed files and creates a MultiQC (v1.7) report.
@@ -37,7 +39,8 @@ Run as: snakemake --use-conda -s Trimm_FastQC_snk
 
 c. Workflow_3: runs Hisat2-build to index the reference genome file, runs Hisat2 (v2.1.0) to map reads from the trimmed.fastq files to the indexed genome, runs htseq-count (v0.11.1) to calculate the number of reads mapping to a specific feature type and performs differential expression analysis
 
-Note: Provide the reference genome as .fna and .gff in the "Genome" folder
+Note: Provide the reference genome as .fna and .gff in a folder named 
+"Genome".
 
 Note: Define the specific feature type for mapping in the beginning of the RNAseq_snk file (under FEATURETYPE = "")
 
@@ -49,6 +52,7 @@ After successful execution, you can create a self-contained interactive HTML rep
 
 Run as: snakemake --report AnalysisReport.html -s RNAseq_snk
 
+
 Testing
 
 To test the workflow you can use:
@@ -56,3 +60,5 @@ To test the workflow you can use:
 - .fastq files:  "raw_data" folder
 
 - reference genome: "Genome" folder
+
+The test data were provided by the teacher as part of a BINP28 exercise.
