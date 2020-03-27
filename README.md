@@ -26,7 +26,8 @@ Step 4a-c: Execute the different workflows
 
 a. Workflow_1: runs FastQC (v0.11.9) on single-end .fastq files and creates a MultiQC (v1.7) report.
 
-Note: FASTQ files should be stored in a folder named "raw_data".
+Note: FASTQ files should be stored in a folder named "raw_data" in 
+BASE_DIR.
 
 Run as: snakemake --use-conda -s FastQC_snk
 
@@ -40,7 +41,7 @@ Run as: snakemake --use-conda -s Trimm_FastQC_snk
 c. Workflow_3: runs Hisat2-build to index the reference genome file, runs Hisat2 (v2.1.0) to map reads from the trimmed.fastq files to the indexed genome, runs htseq-count (v0.11.1) to calculate the number of reads mapping to a specific feature type and performs differential expression analysis
 
 Note: Provide the reference genome as .fna and .gff in a folder named 
-"Genome".
+"Genome" in BASE_DIR.
 
 Note: Define the specific feature type for mapping in the beginning of the RNAseq_snk file (under FEATURETYPE = "")
 
